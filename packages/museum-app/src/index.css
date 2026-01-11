@@ -1,0 +1,30 @@
+/**
+ * Input: 无
+ * Output: 全局样式
+ * 地位: 应用的样式入口，导入TailwindCSS
+ * 一旦我被更新，请务必同时更新我的开头注释，以及所属目录的md
+ */
+
+@import "tailwindcss";
+
+/* 博物馆风格配色 */
+:root {
+  --color-bg: #FAF9F6;
+  --color-text: #3E2723;
+  --color-accent: #D4AF37;
+  --color-card: #FFFFFF;
+  --color-border: #E8E4DF;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  margin: 0;
+  padding: 0;
+}
+
+/* 衬线字体标题 */
+h1, h2, h3 {
+  font-family: 'Playfair Display', Georgia, serif;
+}

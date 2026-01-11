@@ -1,0 +1,5 @@
+{
+  "name": "Polymarket Analyzer",
+  "description": "A comprehensive analysis tool for Polymarket trading data, featuring static statistical breakdowns and dynamic trade replay visualization.",
+  "requestFramePermissions": []
+}

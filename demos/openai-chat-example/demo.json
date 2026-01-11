@@ -1,0 +1,13 @@
+{
+  "title": "OpenAI Chat API示例",
+  "description": "使用Python调用OpenAI Chat Completions API的完整示例代码",
+  "type": "code-snippet",
+  "tags": ["openai", "python", "api", "chat"],
+  "createdAt": "2026-01-11",
+  "author": "AI Museum",
+  "featured": false,
+  "techStack": ["Python", "OpenAI API"],
+  "config": {
+    "language": "python"
+  }
+}

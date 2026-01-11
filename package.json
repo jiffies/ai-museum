@@ -1,0 +1,22 @@
+{
+  "name": "ai-museum",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI Demo收集展示系统 - 博物馆风格",
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "build": "tsx scripts/build-all.ts",
+    "preview": "vite preview --outDir dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "vite": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

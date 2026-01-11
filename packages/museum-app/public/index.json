@@ -1,0 +1,92 @@
+{
+  "demos": [
+    {
+      "slug": "gemini-web-demo",
+      "title": "Gemini Web Demo",
+      "description": "使用Gemini AI创建的交互式Web应用演示",
+      "type": "web-app",
+      "tags": [
+        "gemini",
+        "ai",
+        "web",
+        "demo"
+      ],
+      "createdAt": "2026-01-10",
+      "author": "AI Museum",
+      "featured": true,
+      "techStack": [
+        "React",
+        "TypeScript",
+        "Vite"
+      ]
+    },
+    {
+      "slug": "ai-intro-guide",
+      "title": "AI入门指南",
+      "description": "面向初学者的人工智能基础知识介绍，涵盖机器学习、深度学习和大语言模型的核心概念",
+      "type": "markdown",
+      "tags": [
+        "ai",
+        "入门",
+        "教程",
+        "机器学习"
+      ],
+      "createdAt": "2026-01-11",
+      "author": "AI Museum",
+      "featured": false
+    },
+    {
+      "slug": "openai-chat-example",
+      "title": "OpenAI Chat API示例",
+      "description": "使用Python调用OpenAI Chat Completions API的完整示例代码",
+      "type": "code-snippet",
+      "tags": [
+        "openai",
+        "python",
+        "api",
+        "chat"
+      ],
+      "createdAt": "2026-01-11",
+      "author": "AI Museum",
+      "featured": false,
+      "techStack": [
+        "Python",
+        "OpenAI API"
+      ],
+      "config": {
+        "language": "python"
+      }
+    },
+    {
+      "slug": "polymarket-15m",
+      "title": "Polymarket 15m",
+      "description": "Polymarket 15m Demo",
+      "type": "web-app",
+      "tags": [],
+      "createdAt": "2026-01-10",
+      "featured": false
+    }
+  ],
+  "typeStats": {
+    "web-app": 2,
+    "code-snippet": 1,
+    "markdown": 1,
+    "chat": 0,
+    "research": 0
+  },
+  "allTags": [
+    "ai",
+    "api",
+    "chat",
+    "demo",
+    "gemini",
+    "openai",
+    "python",
+    "web",
+    "入门",
+    "教程",
+    "机器学习"
+  ],
+  "lastUpdated": "2026-01-10T21:03:59.402Z",
+  "totalCount": 4
+}

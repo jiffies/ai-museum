@@ -1,0 +1,82 @@
+# ===== 依赖 =====
+node_modules/
+.pnpm-store/
+.yarn/
+.npm/
+
+# ===== 构建产物 =====
+# 由 GitHub Actions 自动构建，不提交到 git
+dist/
+packages/*/dist/
+packages/*/lib/
+packages/*/build/
+*.tsbuildinfo
+*.tgz
+
+# ===== 环境变量 =====
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ===== 编辑器配置 =====
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+.factorypath
+
+# ===== 系统文件 =====
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===== 日志文件 =====
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ===== 临时文件和缓存 =====
+.cache/
+.temp/
+.tmp/
+*.tmp
+.eslintcache
+.stylelintcache
+.parcel-cache/
+
+# ===== 测试覆盖率 =====
+coverage/
+.nyc_output/
+*.lcov
+
+# ===== 调试和性能分析 =====
+.vite-inspect/
+stats.html
+*.cpuprofile
+*.heapsnapshot
+
+# ===== 其他 =====
+.turbo/
+.next/
+.nuxt/
+.docusaurus/

@@ -1,0 +1,10 @@
+{
+  "title": "Gemini Web Demo",
+  "description": "使用Gemini AI创建的交互式Web应用演示",
+  "type": "web-app",
+  "tags": ["gemini", "ai", "web", "demo"],
+  "createdAt": "2026-01-10",
+  "featured": true,
+  "techStack": ["React", "TypeScript", "Vite"],
+  "author": "AI Museum"
+}
