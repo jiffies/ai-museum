@@ -1,0 +1,5 @@
+{
+  "name": "Gambler's Ruin: The Math of Destiny",
+  "description": "An interactive visualization of the Gambler's Ruin theorem, explaining Random Walks, Absorbing Barriers, and Negative Drift through the story of Machi Big Brother.",
+  "requestFramePermissions": []
+}
