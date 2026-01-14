@@ -2,3 +2,4 @@
 # pnpm workspace配置 - 定义monorepo中的包位置
 packages:
   - 'packages/*'
+  - 'demos/*'

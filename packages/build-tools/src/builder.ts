@@ -84,13 +84,10 @@ async function buildWebApp(
       console.warn(`[builder] ${metadata.slug}: 依赖安装警告`, installResult.stderr);
     }
 
-    // 构建
+    // 构建（直接调用 vite，使用 --base 参数设置子路径）
     console.log(`[builder] ${metadata.slug}: 执行构建...`);
-    const buildResult = await execCommand('pnpm', ['build'], {
+    const buildResult = await execCommand('npx', ['vite', 'build', `--base=/demos/${metadata.slug}/`], {
       cwd: demo.path,
-      env: {
-        VITE_BASE_PATH: `/demos/${metadata.slug}/`,
-      },
     });
 
     if (buildResult.code !== 0) {
