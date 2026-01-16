@@ -228,7 +228,7 @@
 
 <header>
     <div class="app-title">
-        Polymarket 分析工作台 <span>V3.7</span>
+        Polymarket 分析工作台 <span>V3.8</span>
     </div>
     
     <div class="tabs">
@@ -239,7 +239,7 @@
     <div class="api-input-area">
         <div class="input-group">
             <input type="text" id="api-user" class="input-text wide" placeholder="User Address (0x...)">
-            <input type="text" id="api-market" class="input-text" placeholder="Condition ID">
+            <input type="text" id="api-market" class="input-text" placeholder="Market Slug" title="如: btc-updown-15m-1766558700">
             <button class="btn-primary" id="btn-fetch-api" onclick="loadFromApi()">⬇ 获取数据</button>
         </div>
         <div class="divider"></div>
@@ -395,17 +395,99 @@ const hoverState = { c1: [], c2: [], c3: [], c4: [] };
 
 /* ================= API 客户端逻辑 ================= */
 const DATA_API_BASE_URL = 'https://data-api.polymarket.com';
+const GAMMA_API_BASE_URL = 'https://gamma-api.polymarket.com';
+const GAMMA_API_LOCAL_PROXY = '/api/gamma';
+const GAMMA_API_PROXIES = [
+    {
+        name: 'isomorphic-git',
+        build: (url) => `https://cors.isomorphic-git.org/${url}`
+    },
+    {
+        name: 'allorigins',
+        build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    }
+]; // 本地绕过 Gamma CORS
+
+function pickMarketFromResponse(data) {
+    if (!data) return null;
+    if (Array.isArray(data)) return data[0] || null;
+    if (Array.isArray(data.markets)) return data.markets[0] || null;
+    if (Array.isArray(data.data)) return data.data[0] || null;
+    return data;
+}
+
+function getConditionIdFromMarket(market) {
+    if (!market) return '';
+    return market.conditionId || market.condition_id || market.condition?.id || market.condition?.conditionId || '';
+}
+
+async function fetchMarketBySlug(slug) {
+    const url = new URL(`${GAMMA_API_BASE_URL}/markets`);
+    url.searchParams.append('slug', slug);
+    url.searchParams.append('limit', '1');
+
+    const rawUrl = url.toString();
+    console.log(`[API Req] Fetching Market by Slug: ${rawUrl}`);
+    const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const localProxyUrl = `${GAMMA_API_LOCAL_PROXY}${url.pathname}${url.search}`;
+
+    const fetchJson = async (targetUrl) => {
+        const response = await fetch(targetUrl);
+        if (!response.ok) {
+            console.error(`[API Error] Status: ${response.status} ${response.statusText}`);
+            throw new Error(`Gamma API Error: ${response.status}`);
+        }
+        return response.json();
+    };
+
+    let json;
+    let lastError = null;
+    if (isLocalhost) {
+        try {
+            console.log(`[API Req] Trying local proxy: ${localProxyUrl}`);
+            json = await fetchJson(localProxyUrl);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    if (!json) {
+        try {
+            json = await fetchJson(rawUrl);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    if (!json) {
+        for (const proxy of GAMMA_API_PROXIES) {
+            const proxyUrl = proxy.build(rawUrl);
+            console.warn(`[API Warn] Gamma CORS, retry via proxy(${proxy.name}): ${proxyUrl}`);
+            try {
+                json = await fetchJson(proxyUrl);
+                lastError = null;
+                break;
+            } catch (proxyError) {
+                lastError = proxyError;
+                console.warn(`[API Warn] Proxy failed (${proxy.name}): ${proxyError}`);
+            }
+        }
+    }
+    if (!json) throw lastError;
+    const market = pickMarketFromResponse(json);
+    if (!market) return null;
+    return {
+        conditionId: getConditionIdFromMarket(market),
+        title: market.question || market.title || '',
+        slug: market.slug || slug
+    };
+}
 
 async function fetchPolymarketTrades(params) {
     const url = new URL(`${DATA_API_BASE_URL}/trades`);
     
-    // 显式处理参数
     if (params.user) url.searchParams.append('user', params.user);
     if (params.market) url.searchParams.append('market', params.market);
     if (params.limit) url.searchParams.append('limit', params.limit);
     if (params.offset !== undefined) url.searchParams.append('offset', params.offset);
-    
-    // 修正: 必须显式传递 'false'，否则 API 默认默认为 true
     if (params.takerOnly !== undefined) {
         url.searchParams.append('takerOnly', params.takerOnly.toString());
     }
@@ -429,6 +511,8 @@ async function fetchPolymarketActivity(params) {
     if (params.market) url.searchParams.append('market', params.market);
     if (params.limit) url.searchParams.append('limit', params.limit);
     if (params.offset !== undefined) url.searchParams.append('offset', params.offset);
+    if (params.sortBy) url.searchParams.append('sortBy', params.sortBy);
+    if (params.sortDirection) url.searchParams.append('sortDirection', params.sortDirection);
 
     console.log(`[API Req] Fetching Activity: ${url.toString()}`);
 
@@ -438,8 +522,9 @@ async function fetchPolymarketActivity(params) {
         throw new Error(`API Error: ${response.status}`);
     }
     const json = await response.json();
-    console.log(`[API Res] Got ${json.length} activities`);
-    return json;
+    const list = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+    console.log(`[API Res] Got ${list.length} activities`);
+    return list;
 }
 
 async function loadFromApi() {
@@ -452,18 +537,29 @@ async function loadFromApi() {
     
     if (!user || user.length !== 42) { alert('请输入有效的 User Address (0x...)'); return; }
     
-    // 严格匹配 query-user.ts 逻辑：如果 market 为空或 '-', 则 undefined (不传参)
     let marketParam = undefined;
-    if (market && market.length > 5 && market !== '-') {
-        marketParam = market;
-    }
-    console.log(`Params -> User: ${user}, Market: ${marketParam}`);
+    const marketSlug = market || '';
+    let marketInfo = null;
     
     const requestedLimit = 10000; 
     const pageSize = 500;
 
     try {
         btn.disabled = true;
+
+        if (marketSlug && marketSlug !== '-') {
+            btn.textContent = '解析 Market Slug...';
+            marketInfo = await fetchMarketBySlug(marketSlug);
+            if (!marketInfo || !marketInfo.conditionId) {
+                alert('未找到该 Market Slug 对应的 Condition ID，请检查输入');
+                btn.disabled = false;
+                btn.textContent = '⬇ 获取数据';
+                return;
+            }
+            marketParam = marketInfo.conditionId;
+            console.log(`Market slug resolved: ${marketInfo.slug} -> ${marketParam}`);
+        }
+        console.log(`Params -> User: ${user}, Market: ${marketParam || '-'}`);
         
         // ============================================
         // 1. 获取所有交易记录 (takerOnly: false)
@@ -487,7 +583,7 @@ async function loadFromApi() {
             if (!trades || trades.length === 0) break;
             
             allTrades = allTrades.concat(trades);
-            offset += pageSize;
+            offset += trades.length;
             if (trades.length < currentLimit) break;
         }
         console.log(`>>> Total All Trades Fetched: ${allTrades.length}`);
@@ -514,41 +610,26 @@ async function loadFromApi() {
             if (!trades || trades.length === 0) break;
             
             takerTrades = takerTrades.concat(trades);
-            offset += pageSize;
+            offset += trades.length;
             if (trades.length < currentLimit) break;
         }
         console.log(`>>> Total Taker Trades Fetched: ${takerTrades.length}`);
 
         // ============================================
-        // 3. 处理 Trades (Maker/Taker Tagging)
+        // 3. 构建交易类型映射 (Maker/Taker)
         // ============================================
-        console.log("--- Phase 3: Processing Trades ---");
+        console.log("--- Phase 3: Building OrderType Map ---");
         const takerHashSet = new Set(takerTrades.map(t => t.transactionHash));
-        
-        let processedRows = allTrades.map(t => {
-            const isTaker = takerHashSet.has(t.transactionHash);
-            const usdcSize = (t.price || 0) * (t.size || 0);
-            return {
-                timestamp: t.timestamp, 
-                date: new Date(t.timestamp * 1000).toISOString(),
-                type: 'TRADE',
-                side: t.side,
-                outcome: t.outcome,
-                price: t.price,
-                size: t.size,
-                usdcsize: usdcSize,
-                title: t.title,
-                name: t.name,
-                slug: t.slug,
-                ordertype: isTaker ? 'taker' : 'maker',
-                transactionHash: t.transactionHash
-            };
+        const orderTypeMap = new Map();
+        allTrades.forEach(t => {
+            if (!t.transactionHash) return;
+            orderTypeMap.set(t.transactionHash, takerHashSet.has(t.transactionHash) ? 'taker' : 'maker');
         });
 
         // ============================================
-        // 4. 获取 Activity (为了 Merge/Redeem)
+        // 4. 获取 Activity (包含 TRADE / MERGE / REDEEM 等)
         // ============================================
-        console.log("--- Phase 4: Fetching Activity (Merge/Redeem) ---");
+        console.log("--- Phase 4: Fetching Activity ---");
         let allActivities = [];
         offset = 0;
         
@@ -560,53 +641,110 @@ async function loadFromApi() {
                 user: user,
                 market: marketParam,
                 limit: currentLimit,
-                offset: offset
+                offset: offset,
+                sortBy: 'TIMESTAMP',
+                sortDirection: 'DESC'
             });
             
             if (!activities || activities.length === 0) break;
             
             allActivities = allActivities.concat(activities);
-            offset += pageSize;
+            offset += activities.length;
             if (activities.length < currentLimit) break;
         }
         console.log(`>>> Total Activities Fetched: ${allActivities.length}`);
 
         // ============================================
-        // 5. 提取 Merge/Redeem 并合并
+        // 5. 数据一致性验证
         // ============================================
-        console.log("--- Phase 5: Merging Data ---");
-        
-        // 仅保留 MERGE 和 REDEEM，避免与 Trade 重复
-        const nonTradeActivities = allActivities.filter(a => a.type === 'MERGE' || a.type === 'REDEEM');
-        console.log(`Filtered Merge/Redeem events: ${nonTradeActivities.length}`);
+        console.log("--- Phase 5: Validating Trades vs Activity ---");
 
-        const activityRows = nonTradeActivities.map(a => {
-            // Merge/Redeem 1 share = 1 USDC value roughly (for profit calc)
-            // MERGE: 1 Yes + 1 No -> 1 USDC. API size is usually the amount of sets merged.
-            // REDEEM: 1 Winning Share -> 1 USDC. API size is amount redeemed.
+        const allTradesWithType = allTrades.map(t => ({
+            ...t,
+            orderType: takerHashSet.has(t.transactionHash) ? 'taker' : 'maker'
+        }));
+        const allTakerTrades = allTradesWithType.filter(t => t.orderType === 'taker');
+        const allMakerTrades = allTradesWithType.filter(t => t.orderType === 'maker');
+
+        const activityTrades = allActivities.filter(a => String(a.type || '').toUpperCase() === 'TRADE');
+        const allTradeHashes = new Set(allTradesWithType.map(t => t.transactionHash).filter(Boolean));
+        const activityTradeHashes = new Set(activityTrades.map(a => a.transactionHash).filter(Boolean));
+
+        const duplicateHashes = new Map();
+        allTradesWithType.forEach(t => {
+            if (!t.transactionHash) return;
+            const count = duplicateHashes.get(t.transactionHash) || 0;
+            duplicateHashes.set(t.transactionHash, count + 1);
+        });
+        const duplicateHashList = Array.from(duplicateHashes.entries()).filter(([_, count]) => count > 1);
+
+        console.log("[getTrades 数据统计]");
+        console.log(`  Taker 交易数: ${allTakerTrades.length}`);
+        console.log(`  Maker 交易数: ${allMakerTrades.length}`);
+        console.log(`  总交易记录数: ${allTradesWithType.length}`);
+        console.log(`  唯一 transactionHash 数: ${allTradeHashes.size}`);
+        console.log(`  重复 transactionHash 数: ${duplicateHashList.length}`);
+
+        console.log("[getActivity 数据统计]");
+        console.log(`  Activity TRADE 交易数: ${activityTrades.length}`);
+        console.log(`  Activity TRADE 唯一 transaction 数: ${activityTradeHashes.size}`);
+
+        const onlyInTrades = Array.from(allTradeHashes).filter(h => !activityTradeHashes.has(h));
+        const onlyInActivity = Array.from(activityTradeHashes).filter(h => !allTradeHashes.has(h));
+
+        if (onlyInTrades.length === 0 && onlyInActivity.length === 0) {
+            console.log("  ✅ 数据一致：getTrades 和 getActivity 的 TRADE 哈希完全匹配");
+        } else {
+            console.log("  ⚠️  数据差异:");
+            console.log(`    只在 getTrades 中: ${onlyInTrades.length} 个哈希`);
+            if (onlyInTrades.length > 0 && onlyInTrades.length <= 5) {
+                console.log(`    详情: ${onlyInTrades.join(', ')}`);
+            }
+            console.log(`    只在 getActivity 中: ${onlyInActivity.length} 个哈希`);
+            if (onlyInActivity.length > 0 && onlyInActivity.length <= 5) {
+                console.log(`    详情: ${onlyInActivity.join(', ')}`);
+            }
+        }
+
+        // ============================================
+        // 6. 处理 Activity 并按时间排序
+        // ============================================
+        console.log("--- Phase 6: Normalizing Activity Rows ---");
+        const fallbackTitle = marketInfo?.title || '';
+        const fallbackSlug = marketInfo?.slug || marketSlug || '';
+
+        const processedRows = allActivities.map(a => {
+            const activityType = String(a.type || '').toUpperCase();
+            const size = Number(a.size || 0);
+            const rawUsdcSize = Number(a.usdcSize || a.usdc_size || 0);
+            const rawPrice = Number(a.price);
+            const price = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : (size ? (rawUsdcSize / size) : 0);
+            const usdcSize = rawUsdcSize > 0 ? rawUsdcSize : (price * size);
+            const transactionHash = a.transactionHash || '';
+            const orderType = activityType === 'TRADE' ? (orderTypeMap.get(transactionHash) || '') : '';
+
             return {
                 timestamp: a.timestamp,
                 date: new Date(a.timestamp * 1000).toISOString(),
-                type: a.type, // 'MERGE' or 'REDEEM'
-                side: 'INFO',
+                type: a.type || '',
+                side: a.side || '',
                 outcome: a.outcome || '',
-                price: 1, // 逻辑价格 1.0
-                size: a.size,
-                usdcsize: a.size, // 视为等值 USDC
-                title: a.title,
-                name: '', // Activity usually implies current user
-                slug: a.slug,
-                ordertype: '',
-                transactionHash: a.transactionHash
+                price: price,
+                size: size,
+                usdcsize: usdcSize || 0,
+                title: a.title || fallbackTitle,
+                name: a.name || '',
+                slug: a.slug || fallbackSlug,
+                ordertype: orderType,
+                transactionHash: transactionHash
             };
-        });
+        }).filter(r => r.timestamp);
 
-        // 合并 Trade 和 Activity，并按时间排序
-        const finalRows = [...processedRows, ...activityRows].sort((a,b) => a.timestamp - b.timestamp);
+        const finalRows = processedRows.sort((a,b) => a.timestamp - b.timestamp);
         console.log(`Final Total Rows: ${finalRows.length}`);
 
         if (finalRows.length === 0) {
-            alert('未找到该用户在此市场的任何记录 (Trade/Activity)。');
+            alert('未找到该用户在此市场的任何记录 (Activity)。');
             btn.disabled = false;
             btn.textContent = '⬇ 获取数据';
             return;
@@ -1065,7 +1203,7 @@ function renderStaticModule() {
         { l: '总成本 (USDC)', v: fmt.money(t.totalCost), s: `Up ${fmt.money(t.upCost)} + Down ${fmt.money(t.downCost)}` },
         { l: '总回收 (USDC)', v: fmt.money(t.totalRecovered), s: `MERGE ${fmt.money(t.mergeUSDC)} + REDEEM ${fmt.money(t.redeemUSDC)}` },
         { l: '净利润 (USDC)', v: fmt.money(t.profitTotal), s: `≈ ${fmt.pct(t.totalCost? t.profitTotal/t.totalCost:0)} ${winStr}` },
-        { l: '交易笔数 (Trades)', v: t.tradeCount.toLocaleString(), s: `Maker ${t.makerCount} / Taker ${t.takerCount}` }, // New KPI
+        { l: '交易笔数 (Trades)', v: t.tradeCount.toLocaleString(), s: `Maker ${t.makerCount} / Taker ${t.takerCount}` },
 
         { l: '可配对 Shares', v: fmt.shares(t.paired), s: `Up ${fmt.shares(t.upShares)} / Down ${fmt.shares(t.downShares)}` },
         { l: '配对均价和', v: (t.paired? (t.pairedSumPrice.toFixed(5)) : '—'), s: `套利边 ≈ ${(t.arbEdgePerSet*100).toFixed(3)}%/套` },
@@ -1191,7 +1329,7 @@ function prepareDynamicModule() {
         
         const side = (r.side||'BUY').toUpperCase();
         const ms = parseTs(r.timestamp);
-        const orderType = (r.ordertype||'').toLowerCase();
+        const orderType = (r.ordertype || '').toLowerCase();
         
         let displayVal = price; let isYes = false;
         
@@ -1237,9 +1375,9 @@ function prepareDynamicModule() {
              markerSize = minMarkerSize + (t.size / maxTradeSize) * (maxMarkerSize - minMarkerSize);
         }
 
-        // Shape based on Maker (Circle) vs Taker (Square/X)
-        const isMaker = t.orderType === 'maker';
-        const shape = isMaker ? 'circle' : 'square'; // 'square' used as X proxy
+        // Shape based on order type when available, default to circle
+        let shape = 'circle';
+        if (t.orderType === 'taker') shape = 'square';
 
         markers.push({ 
             time: i, 
@@ -1325,8 +1463,9 @@ function seekTo(index) {
     // Update Info
     const trade = dynamicState.trades[idx];
     const d = new Date(trade.time * 1000);
-    const mType = trade.orderType === 'maker' ? 'Maker' : 'Taker';
-    document.getElementById('progress-text').textContent = `[${d.toLocaleTimeString()}] ${trade.side} ${trade.outcome} (${Math.round(trade.size)}) @ ${trade.price} [${mType}]`;
+    const mType = trade.orderType ? (trade.orderType === 'maker' ? 'Maker' : 'Taker') : '';
+    const mTypeText = mType ? ` [${mType}]` : '';
+    document.getElementById('progress-text').textContent = `[${d.toLocaleTimeString()}] ${trade.side} ${trade.outcome} (${Math.round(trade.size)}) @ ${trade.price}${mTypeText}`;
 }
 
 function resetDynamicPlayer() {

@@ -9,3 +9,4 @@
 | src/pages/ | 页面组件 | 首页、详情页等 |
 | src/types/ | 类型定义 | 前端使用的类型定义 |
 | index.html | HTML入口 | Vite应用入口文件 |
+| vite.config.ts | 构建配置 | 开发/构建配置与 Gamma API 代理 |

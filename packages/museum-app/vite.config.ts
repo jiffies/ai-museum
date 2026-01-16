@@ -1,7 +1,7 @@
 /**
  * Input: 无
  * Output: Vite配置
- * 地位: museum-app的构建配置，定义开发和构建行为
+ * 地位: museum-app的构建配置，定义开发和构建行为（包含 Gamma API 开发代理）
  * 一旦我被更新，请务必同时更新我的开头注释，以及所属目录的md
  */
 
@@ -70,5 +70,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: {
+      '/api/gamma': {
+        target: 'https://gamma-api.polymarket.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/gamma/, ''),
+      },
+    },
   },
 });
