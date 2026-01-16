@@ -451,13 +451,6 @@ async function fetchMarketBySlug(slug) {
         }
     }
     if (!json) {
-        try {
-            json = await fetchJson(rawUrl);
-        } catch (error) {
-            lastError = error;
-        }
-    }
-    if (!json) {
         for (const proxy of GAMMA_API_PROXIES) {
             const proxyUrl = proxy.build(rawUrl);
             console.warn(`[API Warn] Gamma CORS, retry via proxy(${proxy.name}): ${proxyUrl}`);
@@ -568,23 +561,27 @@ async function loadFromApi() {
         let allTrades = [];
         let offset = 0;
         
-        while (allTrades.length < requestedLimit) {
+        while (true) {
             btn.textContent = `All Trades: ${allTrades.length}...`;
-            const currentLimit = Math.min(pageSize, requestedLimit - allTrades.length);
+            console.log(`  [All Trades] offset=${offset}, limit=${pageSize}`);
             
             const trades = await fetchPolymarketTrades({
                 user: user,
                 market: marketParam,
                 takerOnly: false,
-                limit: currentLimit,
+                limit: pageSize,
                 offset: offset
             });
             
             if (!trades || trades.length === 0) break;
             
             allTrades = allTrades.concat(trades);
-            offset += trades.length;
-            if (trades.length < currentLimit) break;
+            offset += pageSize;
+            
+            if (requestedLimit && allTrades.length >= requestedLimit) {
+                allTrades = allTrades.slice(0, requestedLimit);
+                break;
+            }
         }
         console.log(`>>> Total All Trades Fetched: ${allTrades.length}`);
 
@@ -595,23 +592,27 @@ async function loadFromApi() {
         let takerTrades = [];
         offset = 0;
         
-        while (takerTrades.length < requestedLimit) {
+        while (true) {
             btn.textContent = `Taker Trades: ${takerTrades.length}...`;
-            const currentLimit = Math.min(pageSize, requestedLimit - takerTrades.length);
+            console.log(`  [Taker Trades] offset=${offset}, limit=${pageSize}`);
 
             const trades = await fetchPolymarketTrades({
                 user: user,
                 market: marketParam,
                 takerOnly: true,
-                limit: currentLimit,
+                limit: pageSize,
                 offset: offset
             });
             
             if (!trades || trades.length === 0) break;
             
             takerTrades = takerTrades.concat(trades);
-            offset += trades.length;
-            if (trades.length < currentLimit) break;
+            offset += pageSize;
+            
+            if (requestedLimit && takerTrades.length >= requestedLimit) {
+                takerTrades = takerTrades.slice(0, requestedLimit);
+                break;
+            }
         }
         console.log(`>>> Total Taker Trades Fetched: ${takerTrades.length}`);
 

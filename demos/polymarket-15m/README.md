@@ -13,7 +13,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xvZWEDI_wBTFh_IijY8n_m
 - User Address：填写 0x 开头的钱包地址
 - Market Slug：填写市场 slug（如 `btc-updown-15m-1766558700`），留空表示不过滤
 - 数据来源：先用 getTrades 两次标注 Maker/Taker，再用 getActivity 做分析与统计
-- 本地开发若遇到 Gamma CORS，会优先走 `/api/gamma`（Vite 代理），失败后再尝试公共代理（`GAMMA_API_PROXIES`）
+- Gamma 请求始终走代理：本地优先 `/api/gamma`（Vite 代理），线上改用公共代理（`GAMMA_API_PROXIES`）
 
 ## Run Locally
 
