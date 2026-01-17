@@ -14,6 +14,8 @@ View your app in AI Studio: https://ai.studio/apps/drive/1xvZWEDI_wBTFh_IijY8n_m
 - Market Slug：填写市场 slug（如 `btc-updown-15m-1766558700`），留空表示不过滤
 - 数据来源：先用 getTrades 两次标注 Maker/Taker，再用 getActivity 做分析与统计
 - Gamma 请求始终走代理：本地优先 `/api/gamma`（Vite 代理），线上改用公共代理（`GAMMA_API_PROXIES`）
+- 下载：点击“⬇ 下载CSV”导出当前数据（格式与历史上传CSV一致）
+- 输入历史：User Address 与 Market Slug 会保存在浏览器本地，并提供下拉候选
 
 ## Run Locally
 

@@ -238,8 +238,10 @@
 
     <div class="api-input-area">
         <div class="input-group">
-            <input type="text" id="api-user" class="input-text wide" placeholder="User Address (0x...)">
-            <input type="text" id="api-market" class="input-text" placeholder="Market Slug" title="如: btc-updown-15m-1766558700">
+            <input type="text" id="api-user" class="input-text wide" placeholder="User Address (0x...)" list="history-users">
+            <datalist id="history-users"></datalist>
+            <input type="text" id="api-market" class="input-text" placeholder="Market Slug" title="如: btc-updown-15m-1766558700" list="history-slugs">
+            <datalist id="history-slugs"></datalist>
             <button class="btn-primary" id="btn-fetch-api" onclick="loadFromApi()">⬇ 获取数据</button>
         </div>
         <div class="divider"></div>
@@ -248,8 +250,7 @@
                 <option value="utc">UTC 时间</option>
                 <option value="local">本地时间</option>
             </select>
-            <label class="btn-primary" style="background:#4b5563; cursor:pointer;" for="global-file">📂 读文件</label>
-            <input type="file" id="global-file" accept=".csv" style="display:none;">
+            <button class="btn-primary" id="btn-download" style="background:#4b5563;">⬇ 下载CSV</button>
         </div>
     </div>
 </header>
@@ -262,7 +263,7 @@
             
             <!-- Metadata Info -->
             <div class="meta-container" id="meta-info">
-                <div style="text-align:center; color:var(--text-sub); font-size:13px;">请通过上方输入 API 参数获取数据，或上传 CSV 文件</div>
+                <div style="text-align:center; color:var(--text-sub); font-size:13px;">请通过上方输入 API 参数获取数据，或下载 CSV 文件</div>
             </div>
 
             <div class="kpi-grid" id="kpi-container">
@@ -392,6 +393,51 @@
 /* ================= 全局状态 ================= */
 let GLOBAL_DATA = { rawRows: [] };
 const hoverState = { c1: [], c2: [], c3: [], c4: [] };
+const HISTORY_LIMIT = 12;
+const HISTORY_KEYS = {
+    user: 'polymarket:history:user',
+    slug: 'polymarket:history:slug'
+};
+
+function readHistory(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeHistory(key, items) {
+    try {
+        localStorage.setItem(key, JSON.stringify(items));
+    } catch {
+        // ignore storage errors
+    }
+}
+
+function pushHistory(key, value) {
+    if (!value) return;
+    const items = readHistory(key);
+    const normalized = value.trim();
+    if (!normalized) return;
+    const next = [normalized, ...items.filter((v) => v !== normalized)].slice(0, HISTORY_LIMIT);
+    writeHistory(key, next);
+    return next;
+}
+
+function syncDatalist(id, items) {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.innerHTML = items.map((item) => `<option value="${item}"></option>`).join('');
+}
+
+function initHistoryUI() {
+    syncDatalist('history-users', readHistory(HISTORY_KEYS.user));
+    syncDatalist('history-slugs', readHistory(HISTORY_KEYS.slug));
+}
 
 /* ================= API 客户端逻辑 ================= */
 const DATA_API_BASE_URL = 'https://data-api.polymarket.com';
@@ -554,6 +600,13 @@ async function loadFromApi() {
         }
         console.log(`Params -> User: ${user}, Market: ${marketParam || '-'}`);
         
+        const userHistory = pushHistory(HISTORY_KEYS.user, user);
+        if (userHistory) syncDatalist('history-users', userHistory);
+        if (marketSlug && marketSlug !== '-') {
+            const slugHistory = pushHistory(HISTORY_KEYS.slug, marketSlug);
+            if (slugHistory) syncDatalist('history-slugs', slugHistory);
+        }
+
         // ============================================
         // 1. 获取所有交易记录 (takerOnly: false)
         // ============================================
@@ -692,8 +745,9 @@ async function loadFromApi() {
 
         const onlyInTrades = Array.from(allTradeHashes).filter(h => !activityTradeHashes.has(h));
         const onlyInActivity = Array.from(activityTradeHashes).filter(h => !allTradeHashes.has(h));
+        const isConsistent = onlyInTrades.length === 0 && onlyInActivity.length === 0;
 
-        if (onlyInTrades.length === 0 && onlyInActivity.length === 0) {
+        if (isConsistent) {
             console.log("  ✅ 数据一致：getTrades 和 getActivity 的 TRADE 哈希完全匹配");
         } else {
             console.log("  ⚠️  数据差异:");
@@ -758,6 +812,10 @@ async function loadFromApi() {
         // 默认取消强制倒序，因为 API 数据通常是最新的在前
         document.getElementById('chk-force-desc').checked = false;
         prepareDynamicModule();
+
+        if (isConsistent) {
+            alert(`✅ 数据一致：getTrades 和 getActivity 的 TRADE 哈希完全匹配（共 ${allTradeHashes.size} 条）`);
+        }
         
         btn.textContent = '✅ 完成';
         setTimeout(() => { btn.disabled = false; btn.textContent = '⬇ 获取数据'; }, 2000);
@@ -809,6 +867,62 @@ const fmt = {
         return d.toLocaleTimeString();
     }
 };
+
+function generateDownloadCSV(rows) {
+    const headers = [
+        'timestamp',
+        'date',
+        'type',
+        'side',
+        'outcome',
+        'price',
+        'size',
+        'usdcSize',
+        'title',
+        'name',
+        'slug',
+        'orderType',
+        'transactionHash'
+    ];
+
+    const escapeCSV = (value) => {
+        if (value === undefined || value === null) return '';
+        const str = String(value);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+    };
+
+    const lines = rows.map((row) => {
+        const ts = parseTs(row.timestamp);
+        const date = row.date || (ts ? new Date(ts).toISOString() : '');
+        const price = Number(row.price);
+        const size = Number(row.size);
+        const usdcSize = Number(row.usdcsize ?? row.usdcSize ?? row.usdc_size);
+        const orderType = row.ordertype ?? row.orderType ?? '';
+
+        const fields = [
+            ts ? String(Math.floor(ts / 1000)) : '',
+            date,
+            row.type || '',
+            row.side || '',
+            row.outcome || '',
+            Number.isFinite(price) ? price.toFixed(4) : '',
+            Number.isFinite(size) ? String(size) : '',
+            Number.isFinite(usdcSize) ? usdcSize.toFixed(2) : '',
+            row.title || '',
+            row.name || '',
+            row.slug || '',
+            orderType,
+            row.transactionHash || ''
+        ];
+
+        return fields.map(escapeCSV).join(',');
+    });
+
+    return [headers.join(','), ...lines].join('\n');
+}
 
 /* ================= 静态绘图逻辑 (Canvas) ================= */
 const GRID_X = 5, GRID_Y = 5;
@@ -1618,17 +1732,31 @@ document.getElementById('btn-view').addEventListener('click', () => {
     window.dynamicChart.applyOptions({ rightPriceScale: { autoScale: dynamicState.isAutoScale, minValue: dynamicState.isAutoScale ? undefined : -1, maxValue: dynamicState.isAutoScale ? undefined : 1 } });
 });
 
+initHistoryUI();
+
 // Global Wiring
-document.getElementById('global-file').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if(!file) return;
-    const text = await file.text();
-    const rows = Papa.parse(text, { header: true, skipEmptyLines: true, dynamicTyping: true }).data;
-    GLOBAL_DATA.rawRows = rows.map(r => {
-        const n = {}; Object.keys(r).forEach(k => n[k.toLowerCase().trim()] = r[k]); return n;
-    }).filter(r => r.timestamp);
-    renderStaticModule();
-    prepareDynamicModule();
+document.getElementById('btn-download').addEventListener('click', () => {
+    if (!GLOBAL_DATA.rawRows.length) {
+        alert('暂无数据可下载，请先获取数据。');
+        return;
+    }
+
+    const sortedRows = [...GLOBAL_DATA.rawRows].sort((a, b) => parseTs(a.timestamp) - parseTs(b.timestamp));
+    const csvContent = generateDownloadCSV(sortedRows);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const user = document.getElementById('api-user').value.trim();
+    const userShort = user ? user.slice(0, 10) : 'user';
+    const filename = `activity_${userShort}_${timestamp}.csv`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
 });
 
 document.getElementById('timezone-select').addEventListener('change', () => { if(GLOBAL_DATA.rawRows.length) renderStaticModule(); });
