@@ -7,6 +7,7 @@
     <!-- 库依赖 -->
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
     <style>
         /* --- 基础样式变量 (Light Theme) --- */
         :root {
@@ -391,7 +392,7 @@
 
 <script>
 /* ================= 全局状态 ================= */
-let GLOBAL_DATA = { rawRows: [] };
+let GLOBAL_DATA = { rawRows: [], marketInfo: null, marketResolution: null };
 const hoverState = { c1: [], c2: [], c3: [], c4: [] };
 const HISTORY_LIMIT = 12;
 const HISTORY_KEYS = {
@@ -453,6 +454,93 @@ const GAMMA_API_PROXIES = [
         build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
     }
 ]; // 本地绕过 Gamma CORS
+
+// ===== CTF 结算信息 =====
+const CTF_CONTRACT = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
+const CTF_RPC_URL = 'https://polygon-rpc.com';
+const CTF_ABI = [
+    'function payoutNumerators(bytes32 conditionId, uint256 outcomeIndex) view returns (uint256)',
+    'function payoutDenominator(bytes32 conditionId) view returns (uint256)',
+];
+
+function normalizeOutcomeKey(outcome) {
+    if (!outcome) return '';
+    const v = String(outcome).trim().toLowerCase();
+    if (v === 'yes' || v === 'up') return 'YES';
+    if (v === 'no' || v === 'down') return 'NO';
+    return '';
+}
+
+function pickWinnerLabel(winnerKey, trades) {
+    if (!winnerKey) return '';
+    const hasUpDown = trades.some(t => /^(Up|Down)$/i.test(t.outcome || ''));
+    if (hasUpDown) return winnerKey === 'YES' ? 'Up' : 'Down';
+    return winnerKey === 'YES' ? 'Yes' : 'No';
+}
+
+function resolveWinnerKeyFromPayouts(payoutNumerators, payoutDenominator) {
+    if (!Array.isArray(payoutNumerators) || payoutNumerators.length < 2) return '';
+    if (!Number.isFinite(payoutDenominator) || payoutDenominator <= 0) return '';
+    const yesNum = Number(payoutNumerators[0] || 0);
+    const noNum = Number(payoutNumerators[1] || 0);
+    if (yesNum > 0 && noNum === 0) return 'YES';
+    if (noNum > 0 && yesNum === 0) return 'NO';
+    return '';
+}
+
+function parseResolutionFromMarket(market) {
+    if (!market) return null;
+    const payoutNums = market.payoutNumerators || market.payout_numerators || market.payouts || market.outcomePayouts;
+    const payoutNumerators = Array.isArray(payoutNums) ? payoutNums.map(Number) : [];
+    const payoutDenominatorRaw = market.payoutDenominator || market.payout_denominator;
+    const payoutDenominator = Number.isFinite(Number(payoutDenominatorRaw))
+        ? Number(payoutDenominatorRaw)
+        : (payoutNumerators.length ? 1 : 0);
+    const resolvedFlag = Boolean(
+        market.resolved ||
+        market.isResolved ||
+        market.finalized ||
+        market.resolution ||
+        market.result
+    );
+    const winnerKey =
+        resolveWinnerKeyFromPayouts(payoutNumerators, payoutDenominator) ||
+        normalizeOutcomeKey(market.winningOutcome || market.outcome || market.resolution || market.result);
+
+    return {
+        isResolved: resolvedFlag || payoutDenominator > 0,
+        winningOutcome: winnerKey || '',
+        payoutNumerators: payoutNumerators.length ? payoutNumerators : [0, 0],
+        payoutDenominator: payoutDenominator || 0,
+        source: 'gamma',
+    };
+}
+
+async function fetchMarketResolutionFromChain(conditionId) {
+    if (!conditionId || !window.ethers) return null;
+    try {
+        const provider = new window.ethers.JsonRpcProvider(CTF_RPC_URL);
+        const ctf = new window.ethers.Contract(CTF_CONTRACT, CTF_ABI, provider);
+        const [yesNum, noNum, denom] = await Promise.all([
+            ctf.payoutNumerators(conditionId, 0),
+            ctf.payoutNumerators(conditionId, 1),
+            ctf.payoutDenominator(conditionId),
+        ]);
+        const payoutNumerators = [Number(yesNum), Number(noNum)];
+        const payoutDenominator = Number(denom);
+        const winnerKey = resolveWinnerKeyFromPayouts(payoutNumerators, payoutDenominator);
+        return {
+            isResolved: payoutDenominator > 0,
+            winningOutcome: winnerKey,
+            payoutNumerators,
+            payoutDenominator,
+            source: 'ctf',
+        };
+    } catch (error) {
+        console.warn('[CTF] Failed to fetch market resolution:', error);
+        return null;
+    }
+}
 
 function pickMarketFromResponse(data) {
     if (!data) return null;
@@ -516,7 +604,8 @@ async function fetchMarketBySlug(slug) {
     return {
         conditionId: getConditionIdFromMarket(market),
         title: market.question || market.title || '',
-        slug: market.slug || slug
+        slug: market.slug || slug,
+        resolution: parseResolutionFromMarket(market),
     };
 }
 
@@ -569,6 +658,8 @@ async function fetchPolymarketActivity(params) {
 async function loadFromApi() {
     console.clear();
     console.log("=== Starting Data Fetch ===");
+    GLOBAL_DATA.marketInfo = null;
+    GLOBAL_DATA.marketResolution = null;
     
     const user = document.getElementById('api-user').value.trim();
     const market = document.getElementById('api-market').value.trim();
@@ -597,6 +688,10 @@ async function loadFromApi() {
             }
             marketParam = marketInfo.conditionId;
             console.log(`Market slug resolved: ${marketInfo.slug} -> ${marketParam}`);
+            GLOBAL_DATA.marketInfo = marketInfo;
+            btn.textContent = '检查市场结算...';
+            const chainResolution = await fetchMarketResolutionFromChain(marketParam);
+            GLOBAL_DATA.marketResolution = chainResolution || marketInfo.resolution || null;
         }
         console.log(`Params -> User: ${user}, Market: ${marketParam || '-'}`);
         
@@ -814,7 +909,7 @@ async function loadFromApi() {
         prepareDynamicModule();
 
         if (isConsistent) {
-            alert(`✅ 数据一致：getTrades 和 getActivity 的 TRADE 哈希完全匹配（共 ${allTradeHashes.size} 条）`);
+            alert(`✅ 数据获取成功并验证通过（共 ${allTradeHashes.size} 条）`);
         }
         
         btn.textContent = '✅ 完成';
@@ -1009,12 +1104,13 @@ function niceDomain(min, max) {
 }
 
 /* ================= 核心分析逻辑 ================= */
-function analyzeStatic(rows) {
+function analyzeStatic(rows, marketResolution) {
     const events = rows.map(r => {
         const d = new Date(parseTs(r.timestamp));
         return {
             raw: r, timestamp: d.getTime(), date: d,
             type: (r.type||'').toUpperCase(), outcome: (r.outcome||'').trim(),
+            side: (r.side||'').toUpperCase(),
             price: Number(r.price||0), size: Number(r.size||0),
             usdcSize: Number(r.usdcsize || r.size*r.price || 0),
             title: r.title || '',
@@ -1027,7 +1123,15 @@ function analyzeStatic(rows) {
     const trades = events.filter(e => e.type === 'TRADE');
     const merges = events.filter(e => e.type === 'MERGE');
     const redeems = events.filter(e => e.type === 'REDEEM');
-    const winner = (redeems.find(r=>r.outcome)?.outcome) || '';
+    const winnerFromResolution =
+        normalizeOutcomeKey(marketResolution?.winningOutcome || '') ||
+        resolveWinnerKeyFromPayouts(
+            marketResolution?.payoutNumerators,
+            marketResolution?.payoutDenominator,
+        );
+    const winnerFromRedeem = normalizeOutcomeKey(redeems.find(r=>r.outcome)?.outcome);
+    const winnerKey = winnerFromResolution || winnerFromRedeem;
+    const winner = pickWinnerLabel(winnerKey, trades);
 
     const upTrades = trades.filter(t => t.outcome.match(/^(Up|Yes)$/i));
     const downTrades = trades.filter(t => t.outcome.match(/^(Down|No)$/i));
@@ -1038,15 +1142,36 @@ function analyzeStatic(rows) {
     const takerCount = trades.filter(t => t.orderType.toLowerCase() === 'taker').length;
 
     const sum = (arr, fn) => arr.reduce((a,x) => a+fn(x), 0);
+    const tradeSign = (t) => (t.side === 'SELL' ? -1 : 1);
     const upShares = sum(upTrades, t=>t.size);
     const downShares = sum(downTrades, t=>t.size);
     const upCost = sum(upTrades, t=>t.usdcSize);
     const downCost = sum(downTrades, t=>t.usdcSize);
     const totalCost = upCost + downCost;
+    const netUpShares = sum(upTrades, t=>t.size * tradeSign(t));
+    const netDownShares = sum(downTrades, t=>t.size * tradeSign(t));
     
     const mergeUSDC = sum(merges, m=>m.usdcSize || m.size);
     const redeemUSDC = sum(redeems, r=>r.usdcSize || r.size);
-    const totalRecovered = mergeUSDC + redeemUSDC;
+    const mergeShares = sum(merges, m=>m.size || m.usdcSize || 0);
+    const redeemShares = sum(redeems, r=>r.size || r.usdcSize || 0);
+    let winnerPayoutRatio = 0;
+    if (winnerKey) {
+        if (marketResolution?.payoutDenominator > 0 && Array.isArray(marketResolution?.payoutNumerators)) {
+            const idx = winnerKey === 'YES' ? 0 : 1;
+            const num = Number(marketResolution.payoutNumerators[idx] || 0);
+            winnerPayoutRatio = num / marketResolution.payoutDenominator;
+        } else {
+            winnerPayoutRatio = 1;
+        }
+    }
+    const remainingWinnerShares = winnerKey === 'YES'
+        ? Math.max(0, netUpShares - mergeShares - redeemShares)
+        : winnerKey === 'NO'
+            ? Math.max(0, netDownShares - mergeShares - redeemShares)
+            : 0;
+    const winnerTokenValue = remainingWinnerShares * winnerPayoutRatio;
+    const totalRecovered = mergeUSDC + redeemUSDC + winnerTokenValue;
     const profitTotal = totalRecovered - totalCost;
 
     const paired = Math.min(upShares, downShares);
@@ -1117,13 +1242,16 @@ function analyzeStatic(rows) {
     const top = [...sec].sort((a,b)=>Math.abs(b.imb)-Math.abs(a.imb)).slice(0, 20);
 
     return {
-        title: events[0]?.title || '', winner, trades, sec, minute, top,
+        title: events[0]?.title || '', winner, winnerKey, trades, sec, minute, top,
         // New metadata fields
         slug: events[0]?.slug || '',
         userName: events[0]?.name || '(Unknown)',
+        resolution: marketResolution || null,
         totals: {
             upShares, downShares, upCost, downCost, totalCost,
-            mergeUSDC, redeemUSDC, totalRecovered, profitTotal,
+            mergeUSDC, redeemUSDC, mergeShares, redeemShares,
+            remainingWinnerShares, winnerTokenValue, winnerPayoutRatio,
+            totalRecovered, profitTotal,
             paired, avgUp, avgDown, pairedSumPrice, arbEdgePerSet,
             profitPaired, profitDirection,
             secondsOnlyUp, secondsOnlyDown, secondsBoth, secondsWithTrades: sec.length,
@@ -1293,7 +1421,7 @@ function plotSizeHist(A, canvas) {
 /* ================= 渲染逻辑 (UI) ================= */
 function renderStaticModule() {
     const tz = document.getElementById('timezone-select').value;
-    const A = analyzeStatic(GLOBAL_DATA.rawRows);
+    const A = analyzeStatic(GLOBAL_DATA.rawRows, GLOBAL_DATA.marketResolution);
     const t = A.totals;
     
     // 1. Render Meta Info (Title, Slug, User)
@@ -1312,11 +1440,15 @@ function renderStaticModule() {
     `;
 
     // 2. Render KPIs
-    const winStr = A.winner ? `<span class="pill good">Winner: ${A.winner}</span>` : `<span class="pill">Winner 未知 (看Redeem)</span>`;
+    const winStr = A.winner
+        ? `<span class="pill good">Winner: ${A.winner}</span>`
+        : (A.resolution?.isResolved
+            ? `<span class="pill">已结算但无唯一赢家</span>`
+            : `<span class="pill">未结算</span>`);
     
     const kpis = [
         { l: '总成本 (USDC)', v: fmt.money(t.totalCost), s: `Up ${fmt.money(t.upCost)} + Down ${fmt.money(t.downCost)}` },
-        { l: '总回收 (USDC)', v: fmt.money(t.totalRecovered), s: `MERGE ${fmt.money(t.mergeUSDC)} + REDEEM ${fmt.money(t.redeemUSDC)}` },
+        { l: '总回收 (USDC)', v: fmt.money(t.totalRecovered), s: `MERGE ${fmt.money(t.mergeUSDC)} + REDEEM ${fmt.money(t.redeemUSDC)}${t.winnerTokenValue ? ' + 未兑胜方 ' + fmt.money(t.winnerTokenValue) : ''}` },
         { l: '净利润 (USDC)', v: fmt.money(t.profitTotal), s: `≈ ${fmt.pct(t.totalCost? t.profitTotal/t.totalCost:0)} ${winStr}` },
         { l: '交易笔数 (Trades)', v: t.tradeCount.toLocaleString(), s: `Maker ${t.makerCount} / Taker ${t.takerCount}` },
 
@@ -1340,6 +1472,7 @@ function renderStaticModule() {
         <p>拆解（近似）：</p>
         <p>• 配对/可 merge 折价套利：<b>${fmt.money(p1)}</b>（约 ${fmt.pct(share(p1))}）</p>
         <p>• 剩余（方向/未完全配对/结算差异）：<b>${fmt.money(p2)}</b>（约 ${fmt.pct(share(p2))}）</p>
+        ${t.winnerTokenValue ? `<p>• 胜方未兑换筹码：<b>${fmt.shares(t.remainingWinnerShares)}</b>（≈ ${fmt.money(t.winnerTokenValue)}，兑付比率 ${(t.winnerPayoutRatio*100).toFixed(2)}%）</p>` : ''}
         <p style="font-size:12px; opacity:0.8; margin-top:8px;">注：这里把“配对套利”按 <span class="pill">配对均价和</span> 计算；真实拆解会受成交时序影响（legging）与结算路径影响。</p>
     `;
     
