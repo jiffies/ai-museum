@@ -88,6 +88,9 @@ importers:
 
   packages/museum-app:
     dependencies:
+      '@stitches/react':
+        specifier: ^1.2.8
+        version: 1.2.8(react@19.2.3)
       fuse.js:
         specifier: ^7.0.0
         version: 7.1.0
@@ -999,6 +1002,11 @@ packages:
 
   '@standard-schema/utils@0.3.0':
     resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
+
+  '@stitches/react@1.2.8':
+    resolution: {integrity: sha512-9g9dWI4gsSVe8bNLlb+lMkBYsnIKCZTmvqvDG+Avnn69XfmHZKiaMrx7cgTaddq7aTPPmXiTsbFcUy0xgI4+wA==}
+    peerDependencies:
+      react: '>= 16.3.0'
 
   '@tailwindcss/node@4.1.18':
     resolution: {integrity: sha512-DoR7U1P7iYhw16qJ49fgXUlry1t4CpXeErJHnQ44JgTSKMaZUdf17cfn5mHchfJ4KRBZRFA/Coo+MUF5+gOaCQ==}
@@ -2527,6 +2535,10 @@ snapshots:
   '@standard-schema/spec@1.1.0': {}
 
   '@standard-schema/utils@0.3.0': {}
+
+  '@stitches/react@1.2.8(react@19.2.3)':
+    dependencies:
+      react: 19.2.3
 
   '@tailwindcss/node@4.1.18':
     dependencies:
