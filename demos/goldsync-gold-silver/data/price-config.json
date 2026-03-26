@@ -1,0 +1,17 @@
+{
+  "comment": "中国市场金银价格参考配置",
+  "sources": {
+    "retail": "https://quote.cngold.org/gjs/swhj.html",
+    "recycle": "https://quote.cngold.org/gjs/hjhs.html"
+  },
+  "last_updated": "2026-01-28",
+  "retail": {
+    "gold_cny_g": null,
+    "silver_cny_g": null
+  },
+  "recycle": {
+    "gold_cny_g": null,
+    "silver_cny_g": null
+  },
+  "note": "如果retail或recycle的价格为null，则使用基于国际价格的计算值"
+}

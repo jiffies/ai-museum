@@ -21,6 +21,24 @@
       ]
     },
     {
+      "slug": "alpha-signal-map",
+      "title": "Alpha Signal Map",
+      "description": "Alpha Signal Map Demo",
+      "type": "web-app",
+      "tags": [],
+      "createdAt": "2026-03-26",
+      "featured": false
+    },
+    {
+      "slug": "goldsync-gold-silver",
+      "title": "Goldsync Gold Silver",
+      "description": "Goldsync Gold Silver Demo",
+      "type": "web-app",
+      "tags": [],
+      "createdAt": "2026-01-27",
+      "featured": false
+    },
+    {
       "slug": "ai-intro-guide",
       "title": "AI入门指南",
       "description": "面向初学者的人工智能基础知识介绍，涵盖机器学习、深度学习和大语言模型的核心概念",
@@ -88,7 +106,7 @@
     }
   ],
   "typeStats": {
-    "web-app": 3,
+    "web-app": 5,
     "code-snippet": 1,
     "markdown": 1,
     "chat": 0,
@@ -111,6 +129,6 @@
     "概率论",
     "随机游走"
   ],
-  "lastUpdated": "2026-01-25T11:14:42.593Z",
-  "totalCount": 5
+  "lastUpdated": "2026-03-26T07:56:43.593Z",
+  "totalCount": 7
 }
